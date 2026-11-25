@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="読む本の裏のバーコードにかざすと、その本だけの静かな音楽が流れ続ける、読書のためのBGM。">
+<style>html{color-scheme:light}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style>
+<title>本音(ほんね)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<script src="zxing.min.js"></script>
+<style>
+/* Layout: one narrow column like a library card; playing opens a dim full-screen "reading" view. */
+:root{
+  --paper:#eceeea; --card:#f8f9f6; --ink:#1d2526; --muted:#5d6865; --rule:#c9cfca;
+  --accent:#3346a8; --accent-ink:#ffffff; --lit:#d94f2b;
+  --night:#0e1213; --night-ink:#cfd6d3; --night-dim:#6f7b78; --night-lit:#f0a070;
+  --f-display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif;
+  --f-body:"Zen Kaku Gothic New","Hiragino Sans","Yu Gothic",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#141a1c; --card:#1c2427; --ink:#e6ebe8; --muted:#9aa6a2; --rule:#33403f;
+  --accent:#8fa0ff; --accent-ink:#0f1430; --lit:#ff8a62; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#141a1c; --card:#1c2427; --ink:#e6ebe8; --muted:#9aa6a2; --rule:#33403f;
+  --accent:#8fa0ff; --accent-ink:#0f1430; --lit:#ff8a62; color-scheme:dark}
+body{background:var(--paper);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.7;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:620px;margin:0 auto;padding-block:28px 48px;display:flex;flex-direction:column;gap:22px}
+header h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;line-height:1.3;margin:0;text-wrap:balance}
+header p{margin:.3rem 0 0;color:var(--muted)}
+header .yomi{font-size:.55em;font-weight:500;color:var(--muted);margin-left:.2em}
+header p.sub{margin:0;font-family:var(--f-display);font-size:1.05rem;color:var(--ink)}
+.scan{display:flex;flex-direction:column;gap:10px;align-items:stretch}
+.scanbtn{border:0;width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:var(--accent);color:var(--accent-ink);
+  border-radius:8px;padding:16px 20px;font-size:1.15rem;font-weight:700;cursor:pointer;text-align:center}
+.scanbtn:focus-within{outline:2px solid var(--accent);outline-offset:3px}
+.scanbtn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.hint{color:var(--muted);font-size:.85rem;margin:0}
+.status{min-height:1.3em;margin:0;font-size:.92rem}
+.status.bad{color:var(--lit)}
+details.manual{border:1px solid var(--rule);border-radius:8px;padding:10px 14px;background:var(--card)}
+details.manual summary{cursor:pointer;font-weight:500}
+.fields{display:grid;gap:12px;margin-top:12px}
+label{font-size:.8rem;letter-spacing:.06em;color:var(--muted);display:block;margin-bottom:4px}
+input[type=text]{width:100%;box-sizing:border-box;font:inherit;font-size:1rem;padding:10px 12px;border:1px solid var(--rule);
+  border-radius:6px;background:var(--card);color:var(--ink)}
+#isbn{font-family:var(--f-mono);font-size:1.1rem;letter-spacing:.05em}
+input:focus-visible,button:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+button{font:inherit;font-weight:500;border-radius:6px;padding:10px 18px;cursor:pointer;border:1px solid var(--rule);background:var(--card);color:var(--ink)}
+button.primary{background:var(--ink);color:var(--paper);border-color:var(--ink);font-size:1.05rem;padding:11px 26px}
+.book{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:18px;display:grid;grid-template-columns:150px 1fr;gap:18px}
+@media (max-width:460px){.book{grid-template-columns:110px 1fr}}
+canvas.jacket{width:100%;height:auto;aspect-ratio:3/4;max-width:100%;border-radius:2px;display:block}
+.book canvas.jacket{box-shadow:0 1px 0 var(--rule),3px 4px 0 rgba(0,0,0,.08)}
+.meta{min-width:0;display:flex;flex-direction:column;gap:8px}
+.meta .t{font-family:var(--f-display);font-size:1.35rem;font-weight:700;line-height:1.4;word-break:break-word}
+.meta .t.ph{color:var(--muted);font-weight:500}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:.88rem}
+dt{color:var(--muted)} dd{margin:0;font-variant-numeric:tabular-nums}
+.mono{font-family:var(--f-mono)}
+.bar{overflow-x:auto}
+svg.code{display:block;width:100%;height:auto;max-width:520px;margin:0 auto}
+svg.code rect{fill:currentColor}
+svg.code text{fill:currentColor;font-family:var(--f-mono);font-size:11px}
+svg.code .on rect,svg.code text.on{fill:var(--lit)}
+.share{display:grid;gap:8px}
+#link{font-family:var(--f-mono);font-size:.8rem}
+.note{color:var(--muted);font-size:.85rem;margin:0}
+details.how{border-top:1px solid var(--rule);padding-top:12px}
+details.how summary{cursor:pointer;font-weight:500}
+details.how ul{padding-left:1.2em;margin:.5em 0}
+.tip{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;border:1px dashed var(--rule);border-radius:8px;padding:14px 16px}
+.tip p{margin:0;flex:1 1 220px;min-width:0}
+.tipbtn{display:inline-block;text-decoration:none;font-weight:700;border-radius:6px;padding:10px 18px;border:1px solid var(--lit);color:var(--lit)}
+
+/* 読書の画面 */
+.reading{position:fixed;inset:0;z-index:20;background:var(--night);color:var(--night-ink);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:22px;text-align:center;
+  padding:calc(24px + env(safe-area-inset-top,0px)) max(20px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(20px,env(safe-area-inset-left,0px))}
+.reading canvas.jacket{width:min(46vw,200px);opacity:.9}
+.reading .rt{font-family:var(--f-display);font-size:1.25rem;line-height:1.4;max-width:22em}
+.reading .rs{font-size:.85rem;color:var(--night-dim);margin:0;font-variant-numeric:tabular-nums}
+.reading svg.code{color:var(--night-dim);max-width:300px}
+.reading svg.code .on rect,.reading svg.code text.on{fill:var(--night-lit)}
+.reading button{background:transparent;color:var(--night-ink);border-color:#2c3435;padding:10px 26px}
+[hidden]{display:none!important}
+.cv{position:relative;min-width:0}
+#cover{width:100%;height:auto;display:block;border-radius:2px;box-shadow:0 1px 0 var(--rule),3px 4px 0 rgba(0,0,0,.08)}
+#rcover{width:min(46vw,200px);height:auto;opacity:.9;border-radius:2px}
+.scanner{position:fixed;inset:0;z-index:30;background:#000;color:#eee;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;
+  padding:calc(16px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(16px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.vf{position:relative;width:min(92vw,520px);aspect-ratio:4/3;max-width:100%;overflow:hidden;border-radius:8px;background:#111}
+.vf video{width:100%;height:100%;object-fit:cover;display:block}
+.guide{position:absolute;left:10%;right:10%;top:30%;bottom:30%;border:2px solid #f0a070;border-radius:6px;box-shadow:0 0 0 999px rgba(0,0,0,.35)}
+.scanner p{margin:0;max-width:26em}
+.scanner button{background:transparent;color:#eee;border-color:#555}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>本音<small class="yomi">(ほんね)</small></h1>
+    <p class="sub">本のバーコード音楽</p>
+    <p>読む本の裏のバーコードにスマホをかざすと、その本だけの静かな音楽が流れはじめます。止めるまで流れ続けるので、読書のあいだのBGMにどうぞ。同じ本なら、いつ誰が鳴らしても同じ音楽です。</p>
+  </header>
+
+  <section class="scan">
+    <button type="button" class="scanbtn" id="live">📷 バーコードにかざす</button>
+    <p class="hint">本の裏の、<b>上の段</b>のバーコード(978で始まる数字)にカメラを向けてください。読めたら自動で止まります。</p>
+    <label class="hint" for="cam" style="text-decoration:underline;cursor:pointer;letter-spacing:0">うまくいかないときは、写真を撮って読む
+      <input type="file" id="cam" accept="image/*" capture="environment" style="position:absolute;width:1px;height:1px;opacity:0">
+    </label>
+    <p class="status" id="status" role="status"></p>
+  </section>
+
+  <details class="manual" id="manual">
+    <summary>数字を打って入れる</summary>
+    <form id="f" class="fields" autocomplete="off">
+      <div>
+        <label for="isbn">ISBN(978か979で始まる13桁。ハイフンや全角数字も可)</label>
+        <input type="text" id="isbn" inputmode="numeric" value="978-4-10-100100-5">
+      </div>
+      <div class="row"><button class="primary" type="submit">この数字で決める</button></div>
+    </form>
+  </details>
+
+  <section class="book" aria-live="polite">
+    <div class="cv"><canvas class="jacket" id="jacket" width="300" height="400" aria-label="数字から描いた表紙"></canvas><img id="cover" alt="本の表紙" hidden></div>
+    <div class="meta">
+      <div class="t ph" id="mt">例のISBN</div>
+      <dl>
+        <dt>著者</dt><dd id="ma">—</dd>
+        <dt>出版社</dt><dd id="mp">—</dd>
+        <dt>ISBN</dt><dd class="mono" id="mi">—</dd>
+        <dt>調</dt><dd id="mk">—</dd>
+        <dt>速さ</dt><dd id="mb">—</dd>
+      </dl>
+      <div>
+        <label for="title">本の題名(任意。表紙とリンクに入ります)</label>
+        <input type="text" id="title" maxlength="40" placeholder="例:こころ">
+      </div>
+    </div>
+  </section>
+
+  <div class="row">
+    <button class="primary" type="button" id="play">▶ 読書をはじめる</button>
+  </div>
+  <p class="note">音が出ないときは、音量を上げ、マナーモード(消音)を外してください。流れているあいだは画面が点いたままになります。明るさを下げて、本の横に置いてください。</p>
+
+  <div class="bar"><svg class="code" id="code" viewBox="0 0 230 92" role="img" aria-label="バーコード"></svg></div>
+
+  <section class="tip" id="tip" hidden>
+    <p>この音楽が気に入ったら、100円から作り手を応援できます。</p>
+    <a class="tipbtn" id="tiplink" href="#" target="_blank" rel="noopener">♪ 100円で応援する</a>
+  </section>
+
+  <section class="share">
+    <div class="row"><button type="button" id="copy">この本の音楽のリンクをコピー</button></div>
+    <input type="text" id="link" readonly aria-label="この本の音楽のリンク">
+    <p class="note" id="copynote">リンクを開いた人にも、同じ音楽が流れます。</p>
+  </section>
+
+  <details class="how">
+    <summary>数字が音になる仕組み</summary>
+    <ul>
+      <li>0〜9の数字を、ド・レ・ミ・ソ・ラの5音(2オクターブ分)に当てます。どの順に並んでも濁りにくい音階です。</li>
+      <li>13桁の並びが、旋律のもとになります。少しずつ形を変えながら、止めるまで流れ続けます。</li>
+      <li>最後の1桁(チェック用の数字)が偶数なら明るい調、奇数なら少し陰のある調。速さも最後の1桁で決まります。</li>
+      <li>13桁の合計で音の高さ、途中の桁で和音の進み方が決まります。</li>
+      <li>本のジャンルでは変えません。その本にたまたま付いた番号だけで決まる、偶然の音楽です。</li>
+    </ul>
+  </details>
+</div>
+
+<div class="scanner" id="scanner" hidden>
+  <div class="vf"><video id="video" playsinline muted autoplay></video><div class="guide"></div></div>
+  <p id="scanmsg">上の段のバーコードを、枠の中に入れてください</p>
+  <button type="button" id="scanstop">やめる</button>
+</div>
+
+<div class="reading" id="reading" hidden>
+  <canvas class="jacket" id="rjacket" width="300" height="400" aria-hidden="true"></canvas><img id="rcover" alt="" hidden>
+  <div class="rt" id="rt"></div>
+  <svg class="code" id="rcode" viewBox="0 0 230 92" aria-hidden="true"></svg>
+  <p class="rs" id="rs">流れています</p>
+  <button type="button" id="stop">■ 止める</button>
+</div>
+
+<script>
+(() => {
+const PAGE_URL = location.origin + location.pathname;
+const TIP_URL = "";   // 投げ銭ページのURL。入れると応援ボタンが出る
+const $ = id => document.getElementById(id);
+if(TIP_URL){$("tiplink").href=TIP_URL;$("tip").hidden=false;}
+
+/* ---------- ISBN ---------- */
+function norm(s){
+  return s.replace(/[０-９Ｘｘ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).replace(/[^0-9Xx]/g,"").toUpperCase();
+}
+function check13(s12){let t=0;for(let i=0;i<12;i++)t+=(+s12[i])*(i%2?3:1);return (10-t%10)%10}
+function parseISBN(raw){
+  const s=norm(raw);
+  if(s.length===10){
+    if(!/^\d{9}[\dX]$/.test(s))return {err:"10桁のISBNの形になっていません。"};
+    const b="978"+s.slice(0,9);return {isbn:b+check13(b),from10:true};
+  }
+  if(s.length!==13||!/^\d{13}$/.test(s))return {err:`数字が${s.length}桁です。13桁のISBNを入れてください。`};
+  if(s.startsWith("192"))return {err:"それは下の段のバーコードです。上の段(978で始まる数字)を使ってください。"};
+  if(!/^97[89]/.test(s))return {err:"ISBNは978か979で始まります。本の裏の、上の段のバーコードの数字です。"};
+  if(check13(s.slice(0,12))!==+s[12])return {err:"最後の1桁が合いません。打ち間違いがないか見てください。"};
+  return {isbn:s};
+}
+const JP={"00":"岩波書店","01":"旺文社","02":"朝日新聞出版","03":"偕成社","04":"KADOKAWA","05":"学研","06":"講談社","07":"主婦の友社","08":"集英社","09":"小学館","10":"新潮社","12":"中央公論新社","13":"東京大学出版会","14":"NHK出版","15":"早川書房","16":"文藝春秋","309":"河出書房新社","334":"光文社","344":"幻冬舎","478":"ダイヤモンド社","480":"筑摩書房","492":"東洋経済新報社","532":"日本経済新聞出版","569":"PHP研究所","591":"ポプラ社"};
+function publisher(isbn){
+  if(isbn.startsWith("9784")){
+    const r=isbn.slice(4);
+    for(const k of [r.slice(0,2),r.slice(0,3)]) if(JP[k])return JP[k];
+    return "日本の出版社";
+  }
+  if(/^97[89][01]/.test(isbn))return "英語圏の出版社";
+  if(isbn.startsWith("9787"))return "中国の出版社";
+  if(isbn.startsWith("97889"))return "韓国の出版社";
+  if(isbn.startsWith("9783"))return "ドイツ語圏の出版社";
+  if(isbn.startsWith("9782"))return "フランス語圏の出版社";
+  return "海外の出版社";
+}
+function fmt(isbn){
+  if(isbn.startsWith("9784")){
+    const r=isbn.slice(4,12);let n;
+    if(JP[r.slice(0,2)])n=2;else if(JP[r.slice(0,3)])n=3;
+    else{const a=+r.slice(0,2);n=a<20?2:a<70?3:a<85?4:a<90?5:a<95?6:7;}
+    return `978-4-${r.slice(0,n)}-${r.slice(n)}-${isbn[12]}`;
+  }
+  return isbn.slice(0,3)+"-"+isbn.slice(3,12)+"-"+isbn[12];
+}
+
+/* ---------- 数字から音楽の設計図を作る ---------- */
+const NAMES=["C","C♯","D","E♭","E","F","F♯","G","A♭","A","B♭","B"];
+const JPN=["ハ","嬰ハ","ニ","変ホ","ホ","ヘ","嬰ヘ","ト","変イ","イ","変ロ","ロ"];
+function rng(seed){let s=(seed>>>0)||1;return()=>{s^=s<<13;s>>>=0;s^=s>>>17;s^=s<<5;s>>>=0;return s/4294967296;};}
+function design(isbn){
+  const d=[...isbn].map(Number), c=d[12];
+  const major=c%2===0;
+  const scale=major?[0,2,4,7,9]:[0,3,5,7,10];
+  const sum=d.reduce((a,b)=>a+b,0);
+  const rootPc=sum%12;
+  const root=60+rootPc-(rootPc>6?12:0);
+  const bpm=58+c*2;                         // 58〜76
+  const chordRoots=major?[0,9,5,7,2]:[0,8,5,7,3];
+  const prog=[0,chordRoots[d[5]%5],chordRoots[d[7]%5],chordRoots[d[9]%5]];
+  if(prog[1]===0)prog[1]=chordRoots[1+(d[5]%4)];
+  const seed=parseInt(isbn.slice(-9),10)^(sum*2654435761);
+  return {d,c,major,scale,root,rootPc,bpm,prog,seed,
+    key:`${JPN[rootPc]}${major?"長調":"短調"}(${NAMES[rootPc]}${major?"":"m"})`,
+    pitch:k=>root+12*Math.floor(k/5)+scale[k%5]};
+}
+
+/* ---------- 音(オルゴールと、やわらかい和音) ---------- */
+let ctx=null, bus=null, verbIn=null;
+function ensureCtx(){
+  if(ctx)return;
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const comp=ctx.createDynamicsCompressor();comp.threshold.value=-18;comp.ratio.value=3;comp.connect(ctx.destination);
+  bus=ctx.createGain();bus.gain.value=.9;bus.connect(comp);
+  // 部屋の響き(数字に関係なく固定の、ノイズからつくる残響)
+  const len=Math.floor(ctx.sampleRate*3.2), ir=ctx.createBuffer(2,len,ctx.sampleRate), r=rng(12345);
+  for(let ch=0;ch<2;ch++){const a=ir.getChannelData(ch);for(let i=0;i<len;i++)a[i]=(r()*2-1)*Math.pow(1-i/len,2.6);}
+  const conv=ctx.createConvolver();conv.buffer=ir;
+  const wet=ctx.createGain();wet.gain.value=.55;
+  verbIn=ctx.createGain();verbIn.connect(conv);conv.connect(wet);wet.connect(comp);
+}
+const SILENT="data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==";
+let unlocked=false;
+function unlockAudio(){
+  try{if(navigator.audioSession)navigator.audioSession.type="playback";}catch(e){}
+  if(!unlocked){unlocked=true;try{const a=new Audio(SILENT);a.setAttribute("playsinline","");a.volume=0.01;const p=a.play();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
+  ensureCtx();
+  try{const b=ctx.createBuffer(1,1,22050);const s=ctx.createBufferSource();s.buffer=b;s.connect(ctx.destination);s.start(0);}catch(e){}
+  return ctx.state==="running"?Promise.resolve():ctx.resume().catch(()=>{});
+}
+const hz=m=>440*Math.pow(2,(m-69)/12);
+function bell(out,when,midi,vel){
+  const f=hz(midi), g=ctx.createGain();
+  g.gain.setValueAtTime(0,when);g.gain.linearRampToValueAtTime(.22*vel,when+.008);
+  g.gain.exponentialRampToValueAtTime(.0006,when+2.6);
+  g.connect(out);
+  const send=ctx.createGain();send.gain.value=.7;g.connect(send);send.connect(verbIn);
+  [[1,1],[2.76,.18],[5.4,.05]].forEach(([r,a])=>{
+    const o=ctx.createOscillator();o.type="sine";o.frequency.value=f*r;
+    const og=ctx.createGain();og.gain.value=a;o.connect(og);og.connect(g);o.start(when);o.stop(when+2.7);
+  });
+}
+function padChord(out,when,len,midis){
+  const lp=ctx.createBiquadFilter();lp.type="lowpass";lp.Q.value=.4;
+  lp.frequency.setValueAtTime(500,when);lp.frequency.linearRampToValueAtTime(1100,when+len*.5);lp.frequency.linearRampToValueAtTime(500,when+len);
+  const g=ctx.createGain();
+  g.gain.setValueAtTime(0,when);g.gain.linearRampToValueAtTime(.045,when+len*.35);
+  g.gain.setValueAtTime(.045,when+len*.7);g.gain.linearRampToValueAtTime(0,when+len+1.2);
+  lp.connect(g);g.connect(out);
+  const send=ctx.createGain();send.gain.value=.5;g.connect(send);send.connect(verbIn);
+  midis.forEach((m,i)=>{[-4,4].forEach(det=>{
+    const o=ctx.createOscillator();o.type=i===0?"sine":"triangle";o.frequency.value=hz(m);o.detune.value=det;
+    o.connect(lp);o.start(when);o.stop(when+len+1.3);
+  });});
+}
+
+/* ---------- 流れ続ける演奏(先読みして少しずつ予約する) ---------- */
+let player=null;
+function startMusic(D){
+  stopMusic(true);
+  const out=ctx.createGain();out.gain.setValueAtTime(0,ctx.currentTime);out.gain.linearRampToValueAtTime(1,ctx.currentTime+4);out.connect(bus);
+  const beat=60/D.bpm, barLen=beat*4, r=rng(D.seed);
+  const st={D,out,beat,barLen,r,bar:0,t0:ctx.currentTime+.15,next:ctx.currentTime+.15,k:0,form:0,lights:[],timer:null};
+  const forms=[k=>D.d[k],k=>D.d[12-k],k=>9-D.d[k],k=>Math.min(9,D.d[k]+2)];
+  function scheduleBar(){
+    const t=st.next, bar=st.bar, chordRoot=D.prog[Math.floor(bar/2)%4];
+    if(bar%2===0){
+      const base=D.root-12+chordRoot - (chordRoot>6?12:0);
+      const third=D.scale.includes((chordRoot+4)%12)?4:3;
+      padChord(out,t,barLen*2,[base-12,base,base+7,base+third+12]);
+    }
+    if(bar%13===0&&bar>0)st.form=Math.floor(r()*forms.length);
+    const density=.38+.25*Math.sin(bar/9)+.08;
+    for(let s=0;s<8;s++){                    // 8分音符の枠
+      const strong=s%4===0;
+      if(r()<(strong?density+.2:density*.55)){
+        const k=st.k%13; st.k++;
+        const deg=forms[st.form](k);
+        let m=D.pitch(deg); if(r()<.15)m+=12;
+        const when=t+s*beat/2+(r()-.5)*.02;
+        bell(out,when,m,.6+r()*.35);
+        st.lights.push({when,idx:k});
+      }
+    }
+    if(r()<.12){ // ときどき一拍休む
+      st.next+=beat;
+    }
+    st.next+=barLen; st.bar++;
+  }
+  st.timer=setInterval(()=>{while(st.next<ctx.currentTime+2.5)scheduleBar();},250);
+  while(st.next<ctx.currentTime+2.5)scheduleBar();
+  player=st;
+  const tick=()=>{
+    if(player!==st)return;
+    const now=ctx.currentTime;
+    let cur=null;while(st.lights.length&&st.lights[0].when<=now){cur=st.lights.shift();}
+    if(cur){lightDigit(cur.idx);clearTimeout(st.off);st.off=setTimeout(()=>lightDigit(null),380);}
+    const sec=Math.max(0,Math.floor(now-st.t0));
+    $("rs").textContent=`流れています ${Math.floor(sec/60)}:${String(sec%60).padStart(2,"0")}`;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+function stopMusic(quick){
+  if(!player)return;
+  const st=player;player=null;clearInterval(st.timer);
+  const now=ctx.currentTime;
+  st.out.gain.cancelScheduledValues(now);st.out.gain.setValueAtTime(st.out.gain.value,now);
+  st.out.gain.linearRampToValueAtTime(0,now+(quick?.1:1.5));
+  setTimeout(()=>{try{st.out.disconnect();}catch(e){}},quick?300:1800);
+  lightDigit(null);
+}
+
+/* ---------- 画面を点けたままにする ---------- */
+let wake=null;
+async function keepAwake(){try{if(navigator.wakeLock)wake=await navigator.wakeLock.request("screen");}catch(e){wake=null;}}
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&player&&!wake)keepAwake();});
+function releaseAwake(){try{wake&&wake.release();}catch(e){}wake=null;}
+
+/* ---------- バーコード(EAN-13) ---------- */
+const L=["0001101","0011001","0010011","0111101","0100011","0110001","0101111","0111011","0110111","0001011"];
+const G=["0100111","0110011","0011011","0100001","0011101","0111001","0000101","0010001","0001001","0010111"];
+const PAR=["LLLLLL","LLGLGG","LLGGLG","LLGGGL","LGLLGG","LGGLLG","LGGGLL","LGLGLG","LGLGGL","LGGLGL"];
+const R=L.map(p=>[...p].map(b=>b==="1"?"0":"1").join(""));
+function barcodeSVG(isbn){
+  const d=[...isbn].map(Number), mw=2, x0=16, h=70;
+  let s="", x=x0;
+  const bars=(bits,cls,tall)=>{let g=`<g class="${cls}">`;for(const b of bits){if(b==="1")g+=`<rect x="${x}" y="4" width="${mw}" height="${tall?h+6:h}"/>`;x+=mw;}return g+"</g>";};
+  s+=bars("101","guard",1);
+  for(let i=1;i<=6;i++)s+=bars((PAR[d[0]][i-1]==="L"?L:G)[d[i]],"dg d"+i,0);
+  s+=bars("01010","guard",1);
+  for(let i=7;i<=12;i++)s+=bars(R[d[i]],"dg d"+i,0);
+  s+=bars("101","guard",1);
+  let tx=`<text x="${x0-10}" y="88" class="t0">${d[0]}</text>`;
+  for(let i=1;i<=12;i++){const cx=x0+6+(i<=6?(i-1)*14+3:(i-1)*14+13);tx+=`<text x="${cx}" y="88" class="t${i}">${d[i]}</text>`;}
+  return s+tx;
+}
+function lightDigit(i){
+  document.querySelectorAll("svg.code .on").forEach(e=>e.classList.remove("on"));
+  if(i==null)return;
+  document.querySelectorAll(`svg.code .d${i}, svg.code .t${i}`).forEach(e=>e.classList.add("on"));
+}
+
+/* ---------- 表紙(旋律の形) ---------- */
+function drawJacket(cv,isbn,title,D){
+  const g=cv.getContext("2d"),W=cv.width,H=cv.height,d=D.d;
+  const r=rng(+isbn.slice(-9));
+  const hue=Math.floor(r()*360), hue2=(hue+140+Math.floor(r()*80))%360;
+  const light=D.major;
+  g.fillStyle=`hsl(${hue} ${light?35:28}% ${light?86:22}%)`;g.fillRect(0,0,W,H);
+  g.fillStyle=`hsl(${hue2} 45% ${light?70:38}%)`;g.fillRect(0,H*.62,W,H*.38);
+  const pts=d.map((k,i)=>[24+i*(W-48)/12, H*.56-k*(H*.38/9)]);
+  g.strokeStyle=`hsl(${hue} 40% ${light?25:85}%)`;g.lineWidth=2;g.beginPath();
+  pts.forEach(([x,y],i)=>i?g.lineTo(x,y):g.moveTo(x,y));g.stroke();
+  pts.forEach(([x,y],i)=>{g.beginPath();g.arc(x,y,3+d[i]*.7,0,Math.PI*2);g.fillStyle=i===12?`hsl(${hue2} 70% 50%)`:g.strokeStyle;g.fill();});
+  g.fillStyle=light?`hsl(${hue} 30% 14%)`:`hsl(${hue} 20% 94%)`;g.textBaseline="top";
+  const t=title||"";
+  g.font=`700 ${t.length>9?24:30}px "Shippori Mincho", serif`;
+  const lines=[];let cur="";
+  for(const ch of t){if(g.measureText(cur+ch).width>W-44){lines.push(cur);cur=ch;}else cur+=ch;}
+  if(cur)lines.push(cur);
+  lines.slice(0,3).forEach((ln,i)=>g.fillText(ln,22,26+i*38));
+  g.font=`500 13px "IBM Plex Mono", monospace`;g.fillStyle=light?`hsl(${hue2} 40% 18%)`:`hsl(${hue2} 30% 92%)`;
+  g.fillText(fmt(isbn),22,H-30);
+  g.font=`500 12px "Zen Kaku Gothic New", sans-serif`;g.fillText(D.key,22,H-50);
+}
+
+/* ---------- リンク ---------- */
+const enc=s=>[...new TextEncoder().encode(s)].map(b=>b.toString(16).padStart(2,"0")).join("");
+const dec=h=>{try{return new TextDecoder().decode(new Uint8Array(h.match(/../g).map(x=>parseInt(x,16))));}catch(e){return "";}};
+const hashFor=(isbn,title)=>"b"+isbn+(title?"-t"+enc(title):"");
+function readHash(){
+  const m=location.hash.match(/^#b(\d{13})(?:-t([0-9a-f]+))?$/);
+  return m?{isbn:m[1],title:m[2]?dec(m[2]):""}:null;
+}
+
+/* ---------- 画面 ---------- */
+let state=null;
+function setStatus(msg,bad){$("status").textContent=msg;$("status").classList.toggle("bad",!!bad);}
+function render(isbn,title,example){
+  const D=design(isbn);const prev=state&&state.prevIsbn;state={isbn,title,D,example,prevIsbn:prev,author:state&&prev===isbn?state.author:"",cover:state&&prev===isbn?state.cover:null};
+  if(!state||state.prevIsbn!==isbn){setCover(null);$("ma").textContent="—";}
+  state.prevIsbn=isbn;
+  $("mt").textContent=title||(example?"例のISBN":"題名は未入力");
+  $("mt").classList.toggle("ph",!title);
+  $("mp").textContent=publisher(isbn);
+  $("mi").textContent=fmt(isbn);
+  $("mk").textContent=D.key;
+  $("mb").textContent=`♩=${D.bpm}(ゆっくり)`;
+  $("code").innerHTML=barcodeSVG(isbn);
+  drawJacket($("jacket"),isbn,title,D);
+  $("isbn").value=fmt(isbn);
+  const h=hashFor(isbn,title);
+  $("link").value=PAGE_URL+"#"+h;
+  if(!example){try{if(location.hash!=="#"+h)location.hash=h;}catch(e){}}
+}
+function useISBN(raw,how){
+  const p=parseISBN(raw);
+  if(p.err){setStatus(p.err,true);return false;}
+  const same=state&&state.isbn===p.isbn;
+  if(!same)$("title").value="";
+  render(p.isbn,$("title").value.trim(),false);
+  if(!same)lookupBook(p.isbn);
+  setStatus(`${how}:${fmt(p.isbn)}(${publisher(p.isbn)})。「▶ 読書をはじめる」を押してください。`);
+  return true;
+}
+$("f").addEventListener("submit",e=>{e.preventDefault();if(useISBN($("isbn").value,"読み取りました"))$("manual").open=false;});
+$("title").addEventListener("change",()=>{if(state)render(state.isbn,$("title").value.trim(),state.example&&!$("title").value.trim());});
+
+/* 写真からバーコードを読む */
+function loadImage(file){
+  return new Promise((ok,ng)=>{const u=URL.createObjectURL(file);const im=new Image();im.onload=()=>ok({im,u});im.onerror=()=>ng(new Error("img"));im.src=u;});
+}
+function toCanvas(im,maxSide,rot){
+  const s=Math.min(1,maxSide/Math.max(im.naturalWidth,im.naturalHeight));
+  const w=Math.round(im.naturalWidth*s),h=Math.round(im.naturalHeight*s);
+  const cv=document.createElement("canvas");
+  if(rot){cv.width=h;cv.height=w;}else{cv.width=w;cv.height=h;}
+  const g=cv.getContext("2d");
+  if(rot){g.translate(h,0);g.rotate(Math.PI/2);}
+  g.drawImage(im,0,0,w,h);return cv;
+}
+async function decodeFile(file){
+  const {im,u}=await loadImage(file);
+  try{
+    const found=[];
+    if("BarcodeDetector" in window){
+      try{const bd=new BarcodeDetector({formats:["ean_13"]});const rs=await bd.detect(im);rs.forEach(r=>found.push(r.rawValue));}catch(e){}
+    }
+    if(!found.some(v=>/^97[89]/.test(v))&&window.ZXing){
+      const Z=window.ZXing;
+      const hints=new Map();hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13]);hints.set(Z.DecodeHintType.TRY_HARDER,true);
+      const reader=new Z.MultiFormatReader();reader.setHints(hints);
+      for(const [side,rot] of [[1400,0],[900,0],[1400,1],[2000,0]]){
+        try{
+          const cv=toCanvas(im,side,rot);
+          const src=new Z.HTMLCanvasElementLuminanceSource(cv);
+          const bmp=new Z.BinaryBitmap(new Z.HybridBinarizer(src));
+          const res=reader.decode(bmp);found.push(res.getText());
+          if(/^97[89]/.test(res.getText()))break;
+        }catch(e){}
+      }
+    }
+    return found;
+  }finally{URL.revokeObjectURL(u);}
+}
+$("cam").addEventListener("change",async e=>{
+  const file=e.target.files&&e.target.files[0];e.target.value="";
+  if(!file)return;
+  setStatus("読み取っています…");
+  try{
+    const found=await decodeFile(file);
+    const isbn=found.find(v=>/^97[89]\d{10}$/.test(v));
+    if(isbn){useISBN(isbn,"読み取りました");}
+    else if(found.some(v=>v.startsWith("192")))setStatus("下の段のバーコードが写っていました。上の段(978で始まる数字)だけが大きく写るように、もう一度撮ってください。",true);
+    else setStatus("バーコードが読めませんでした。明るい所で、バーコードが画面の真ん中に大きく、まっすぐ写るように撮ってください。読めないときは「数字を打って入れる」も使えます。",true);
+  }catch(err){setStatus("写真を開けませんでした。もう一度撮ってください。",true);}
+});
+
+/* 本の情報を無料の公開データから取ってくる */
+function withTimeout(p,ms){return Promise.race([p,new Promise((_,ng)=>setTimeout(()=>ng(new Error("timeout")),ms))]);}
+async function fromOpenBD(isbn){
+  const r=await withTimeout(fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`),6000);
+  if(!r.ok)throw 0;const j=await r.json();const s=j&&j[0]&&j[0].summary;
+  if(!s||!s.title)throw 0;
+  return {title:s.title,author:(s.author||"").replace(/／著.*$/,"").trim(),cover:s.cover||null,src:"openBD"};
+}
+async function fromGoogle(isbn){
+  const r=await withTimeout(fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`),6000);
+  if(!r.ok)throw 0;const j=await r.json();const v=j.items&&j.items[0]&&j.items[0].volumeInfo;
+  if(!v||!v.title)throw 0;
+  const img=v.imageLinks&&(v.imageLinks.thumbnail||v.imageLinks.smallThumbnail);
+  return {title:v.title+(v.subtitle?" "+v.subtitle:""),author:(v.authors||[]).join("、"),cover:img?img.replace(/^http:/,"https:"):null,src:"Google Books"};
+}
+function setCover(url){
+  const im=$("cover");
+  if(!url){im.hidden=true;$("jacket").hidden=false;im.removeAttribute("src");if(state)state.cover=null;return;}
+  im.onload=()=>{if(im.naturalWidth>2){im.hidden=false;$("jacket").hidden=true;if(state)state.cover=url;}};
+  im.onerror=()=>{im.hidden=true;$("jacket").hidden=false;};
+  im.src=url;
+}
+let lookupSeq=0;
+async function lookupBook(isbn){
+  const my=++lookupSeq;
+  $("mt").textContent="題名を探しています…";
+  let info=null;
+  for(const f of [fromOpenBD,fromGoogle]){try{info=await f(isbn);break;}catch(e){}}
+  if(my!==lookupSeq||!state||state.isbn!==isbn)return;
+  if(info){
+    if(!$("title").value.trim()){$("title").value=info.title;}
+    state.author=info.author;
+    render(isbn,$("title").value.trim(),false);
+    $("ma").textContent=info.author||"—";
+    if(info.cover)setCover(info.cover);
+  }else{
+    render(isbn,$("title").value.trim(),false);
+    $("mt").textContent=$("title").value.trim()||"題名が見つかりませんでした(手で入れられます)";
+  }
+}
+
+/* かざして読む(カメラの映像から読み取る) */
+let scanStream=null, scanTimer=null, scanBusy=false;
+async function decodeCanvas(cv){
+  if("BarcodeDetector" in window){
+    try{const bd=new BarcodeDetector({formats:["ean_13"]});const rs=await bd.detect(cv);if(rs.length)return rs.map(r=>r.rawValue);}catch(e){}
+  }
+  if(window.ZXing){
+    const Z=window.ZXing;
+    const hints=new Map();hints.set(Z.DecodeHintType.POSSIBLE_FORMATS,[Z.BarcodeFormat.EAN_13]);hints.set(Z.DecodeHintType.TRY_HARDER,true);
+    const reader=new Z.MultiFormatReader();reader.setHints(hints);
+    try{const res=reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(cv))));return [res.getText()];}catch(e){}
+  }
+  return [];
+}
+function stopScan(){
+  clearInterval(scanTimer);scanTimer=null;
+  if(scanStream){scanStream.getTracks().forEach(t=>t.stop());scanStream=null;}
+  $("video").srcObject=null;$("scanner").hidden=true;
+}
+async function startScan(){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setStatus("この画面ではカメラが使えません。下の「写真を撮って読む」を使ってください。",true);return;}
+  $("scanmsg").textContent="上の段のバーコードを、枠の中に入れてください";
+  $("scanner").hidden=false;
+  try{
+    scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}},audio:false});
+  }catch(e){
+    $("scanner").hidden=true;
+    setStatus("カメラを使う許可が出ませんでした。許可するか、下の「写真を撮って読む」を使ってください。",true);return;
+  }
+  const v=$("video");v.srcObject=scanStream;try{await v.play();}catch(e){}
+  const cv=document.createElement("canvas");
+  scanTimer=setInterval(async()=>{
+    if(scanBusy||!v.videoWidth)return;scanBusy=true;
+    try{
+      // 枠のあたり(中央の横長の帯)だけを切り出して読む
+      const w=v.videoWidth,h=v.videoHeight,cw=Math.round(w*.8),ch=Math.round(h*.5);
+      cv.width=cw;cv.height=ch;cv.getContext("2d").drawImage(v,(w-cw)/2,(h-ch)/2,cw,ch,0,0,cw,ch);
+      const found=await decodeCanvas(cv);
+      const isbn=found.find(x=>/^97[89]\d{10}$/.test(x));
+      if(isbn){try{navigator.vibrate&&navigator.vibrate(60);}catch(e){}stopScan();useISBN(isbn,"読み取りました");}
+      else if(found.some(x=>x.startsWith("192")))$("scanmsg").textContent="それは下の段です。上の段(978で始まる方)に向けてください";
+    }finally{scanBusy=false;}
+  },300);
+}
+$("live").addEventListener("click",startScan);
+$("scanstop").addEventListener("click",stopScan);
+
+/* 再生 */
+$("play").addEventListener("click",()=>{
+  if(!state)return;
+  const ready=unlockAudio();
+  const s=state;
+  drawJacket($("rjacket"),s.isbn,s.title,s.D);
+  if(s.cover){$("rcover").src=s.cover;$("rcover").hidden=false;$("rjacket").hidden=true;}else{$("rcover").hidden=true;$("rjacket").hidden=false;}
+  $("rcode").innerHTML=barcodeSVG(s.isbn);
+  $("rt").textContent=s.title||fmt(s.isbn);
+  $("reading").hidden=false;
+  keepAwake();
+  ready.then(()=>startMusic(s.D));
+  setTimeout(()=>{if(ctx&&ctx.state!=="running")$("rs").textContent="音が出せませんでした。「止める」を押して、もう一度はじめてください。";},900);
+});
+$("stop").addEventListener("click",()=>{stopMusic(false);releaseAwake();$("reading").hidden=true;});
+
+$("copy").addEventListener("click",()=>{
+  const v=$("link").value;
+  const done=()=>{$("copynote").textContent="コピーしました。LINEやメールに貼り付けて送れます。";};
+  const fallback=()=>{$("link").focus();$("link").select();$("copynote").textContent="選択した文字を、長押しかCtrl+Cでコピーしてください。";};
+  try{navigator.clipboard.writeText(v).then(done,fallback);}catch(e){fallback();}
+});
+function boot(){
+  const h=readHash();
+  if(h&&check13(h.isbn.slice(0,12))===+h.isbn[12]){
+    $("title").value=h.title;render(h.isbn,h.title,false);if(!h.title)lookupBook(h.isbn);
+    setStatus("送られてきた本の音楽です。「▶ 読書をはじめる」を押すと流れます。");
+  }else{render("9784101001005","",true);}
+}
+window.addEventListener("hashchange",()=>{const h=readHash();if(h&&(!state||h.isbn!==state.isbn||h.title!==state.title))boot();});
+(document.fonts?document.fonts.ready:Promise.resolve()).then(()=>state&&drawJacket($("jacket"),state.isbn,state.title,state.D));
+boot();
+})();
+</script>
+
+</body>
+</html>
